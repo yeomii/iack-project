@@ -2307,6 +2307,66 @@ void ath_tx_cabq(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	ath_txq_unlock(sc, txctl.txq);
 }
 
+static int makeACK(struct sk_buff *ack_skb) {
+	struct ieee80211_hdr *mac_hdr;
+	struct iphdr *ip_hdr;
+	struct tcphdr *tcp_hdr;
+	u8 tempMAC[ETH_ALEN];
+	__be32 tempIP, tempTCPnum;
+	__be16 tempTCPport;
+	__be16 total_length;
+
+	if(ack_skb == NULL) {
+		//debug msg
+		return -1;
+	}
+
+	mac_hdr = (struct ieee80211_hdr *)ack_skb->mac_header;
+	ip_hdr = (struct iphdr *)ack_skb->network_header;
+	tcp_hdr = (struct tcphdr *)ack_skb->transport_header;
+
+	mac_hdr->frame_control = 0x0801;
+	mac_hdr->duration_id = 0x0;
+	memcpy(tempMAC, mac_hdr->addr1, ETH_ALEN);
+	memcpy(mac_hdr->addr1, mac_hdr->addr2, ETH_ALEN);
+	memcpy(mac_hdr->addr2, tempMAC, ETH_ALEN);
+	mac_hdr->seq_ctrl = 0x0;
+
+	total_length = ip_hdr->tot_len - (ip_hdr->ihl * 4 + tcp_hdr->doff * 4)
+	ip_hdr->ihl = 5;
+	ip_hdr->tos = 0x0;
+	ip_hdr->tot_len = 40;
+	ip_hdr->id = 0;
+	ip_hdr->frag_off = 0x4000;
+	ip_hdr->ttl = 0x40;
+	ip_hdr->protocol = 0x06;
+	ip_hdr->check = 0x0;
+	tempIP = ip_hdr->saddr;
+	ip_hdr->saddr = ip_hdr->daddr;
+	ip_hdr->daddr = tempIP;
+
+	tempTCPport = tcp_hdr->source;
+	tcp_hdr->source = tcp_hdr->dest;
+	tcp_hdr->dest = tempTCPport;
+	tempTCPnum = seq;
+	tcp_hdr->seq = tcp_hdr->ack_seq;
+	tcp_hdr->ack_seq = total_length + tempTCPnum;
+	tcp_hdr->fin = 0x0;
+	tcp_hdr->syn = 0x0;
+	tcp_hdr->rst = 0x0;
+	tcp_hdr->psh = 0x0;
+	tcp_hdr->ack = 0x1;
+	tcp_hdr->urg = 0x0;
+	tcp_hdr->ece = 0x0;
+	tcp_hdr->cwr = 0x0;
+	tcp_hdr->doff = 5;
+	tcp_hdr->window = 64;
+	tcp_hdr->check = 0x0;
+	tcp_hdr->urg_ptr = 0x0;
+
+	return 0;
+}
+
 /*****************/
 /* TX Completion */
 /*****************/
@@ -2319,8 +2379,13 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	struct ieee80211_hdr * hdr = (struct ieee80211_hdr *)skb->data;
 	int padpos, padsize;
 	unsigned long flags;
+	struct sk_buff *ack_skb = skb_copy(skb, GFP_ATOMIC);
 
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
+
+	if(makeACK(ack_skb) >= 0) {
+		netif_receive_skb(ack_skb);
+	}
 
 	if (sc->sc_ah->caldata)
 		set_bit(PAPRD_PACKET_SENT, &sc->sc_ah->caldata->cal_flags);
