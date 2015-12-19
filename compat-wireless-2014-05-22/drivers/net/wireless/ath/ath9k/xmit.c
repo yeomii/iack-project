@@ -2371,33 +2371,31 @@ static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
 }
 
 static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk_buff *skb) {
-	struct ieee80211_hdr *mac_hdr;
-	struct iphdr *ip_hdr;
-	struct tcphdr *tcp_hdr;
-	u8 tempMAC[ETH_ALEN];
-	__be32 tempIP, tempTCPnum;
-	__be16 tempTCPport;
+	struct ieee80211_hdr *mac_hdr, *ori_mac;
+	struct iphdr *ip_hdr, *ori_ip;
+	struct tcphdr *tcp_hdr, *ori_tcp;
 	__be16 total_length;
 
-    ath_dbg(common, XMIT, "\t\t[makeACK]\n");
-	if(ack_skb == NULL) {
-		//debug msg
-        ath_dbg(common, XMIT, "[makeACK] ack_skb == NULL\n");
-		return -1;
-	}
+    ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [makeACK] <<<<<<<<<<<<<<<<<<<\n");
 
-	mac_hdr = (struct ieee80211_hdr *)ack_skb->mac_header;
-	ip_hdr = (struct iphdr *)ack_skb->network_header;
-	tcp_hdr = (struct tcphdr *)ack_skb->transport_header;
+	ori_mac = (struct ieee80211_hdr *)skb->mac_header;
+	ori_ip = (struct iphdr *)skb->network_header;
+	ori_tcp = (struct tcphdr *)skb->transport_header;
 
-	mac_hdr->frame_control = 0x0801;
-	mac_hdr->duration_id = 0x0;
-	memcpy(tempMAC, mac_hdr->addr1, ETH_ALEN);
-	memcpy(mac_hdr->addr1, mac_hdr->addr2, ETH_ALEN);
-	memcpy(mac_hdr->addr2, tempMAC, ETH_ALEN);
+	skb_put(ack_skb, 70);
+	memset(ack_skb->data, 0, 70);
+
+	mac_hdr = (struct ieee80211_hdr *)ack_skb->data;
+	mac_hdr->frame_control = cpu_to_le16(IEEE80211_FTYPE_DATA);
+	mac_hdr->duration_id = 0;
+	memcpy(mac_hdr->addr1, ori_mac->addr2, ETH_ALEN);
+	memcpy(mac_hdr->addr2, ori_mac->addr1, ETH_ALEN);
 	mac_hdr->seq_ctrl = 0x0;
+	ack_skb->mac_header = (sk_buff_data_t)mac_hdr;
 
-	total_length = ip_hdr->tot_len - (ip_hdr->ihl * 4 + tcp_hdr->doff * 4);
+	ip_hdr = (struct iphdr *)(ack_skb->data + sizeof(*mac_hdr));
+	total_length = ori_ip->tot_len - (ori_ip->ihl * 4 + ori_tcp->doff * 4);
+	memcpy(ip_hdr, ori_ip, sizeof(struct iphdr));
 	ip_hdr->ihl = 5;
 	ip_hdr->tos = 0x0;
 	ip_hdr->tot_len = 40;
@@ -2406,16 +2404,16 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	ip_hdr->ttl = 0x40;
 	ip_hdr->protocol = 0x06;
 	ip_hdr->check = 0x0;
-	tempIP = ip_hdr->saddr;
-	ip_hdr->saddr = ip_hdr->daddr;
-	ip_hdr->daddr = tempIP;
+	ip_hdr->saddr = ori_ip->daddr;
+	ip_hdr->daddr = ori_ip->saddr;
+	ack_skb->network_header = (sk_buff_data_t)ip_hdr;
 
-	tempTCPport = tcp_hdr->source;
-	tcp_hdr->source = tcp_hdr->dest;
-	tcp_hdr->dest = tempTCPport;
-	tempTCPnum = tcp_hdr->seq;
-	tcp_hdr->seq = tcp_hdr->ack_seq;
-	tcp_hdr->ack_seq = total_length + tempTCPnum;
+	tcp_hdr = (struct tcphdr *)(ack_skb->data + sizeof(*mac_hdr) + sizeof(*ip_hdr));
+	memcpy(tcp_hdr, ori_tcp, sizeof(struct tcphdr));
+	tcp_hdr->source = ori_tcp->dest;
+	tcp_hdr->dest = ori_tcp->source;
+	tcp_hdr->seq = ori_tcp->ack_seq;
+	tcp_hdr->ack_seq = total_length + ori_tcp->seq;
 	tcp_hdr->fin = 0x0;
 	tcp_hdr->syn = 0x0;
 	tcp_hdr->rst = 0x0;
@@ -2428,6 +2426,7 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	tcp_hdr->window = 64;
 	tcp_hdr->check = 0x0;
 	tcp_hdr->urg_ptr = 0x0;
+	ack_skb->transport_header = (sk_buff_data_t)tcp_hdr;
 
     ath_dbg_skb_custom(common, ack_skb);
 	return 0;
@@ -2449,6 +2448,11 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
     if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol != 6)
     {
+			struct sk_buff *ack_skb = alloc_skb(70, GFP_KERNEL);
+			if(makeACK(common, ack_skb, skb) >= 0) {
+				//success
+			}
+			kfree_skb(ack_skb);
     }
 
 	if (sc->sc_ah->caldata)
