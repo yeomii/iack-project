@@ -18,6 +18,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/netdevice.h>
+#include <linux/skbuff.h>
 
 #include "ath9k.h"
 #include "ar9003_mac.h"
@@ -2444,15 +2445,15 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	struct ieee80211_hdr * hdr = (struct ieee80211_hdr *)skb->data;
 	int padpos, padsize;
 	unsigned long flags;
-	struct sk_buff *ack_skb = skb_copy(skb, GFP_ATOMIC);
 
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
     if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol != 6)
     {
-	    struct sk_buff *ack_skb = skb_copy(skb, GFP_ATOMIC);
+	    struct sk_buff *ack_skb = skb_copy(skb, GFP_NOWAIT);
         if(makeACK(common, ack_skb) >= 0) {
-            netif_receive_skb(ack_skb);
+            //netif_receive_skb(ack_skb);
         }
+        kfree_skb(ack_skb);
     }
 
 	if (sc->sc_ah->caldata)
