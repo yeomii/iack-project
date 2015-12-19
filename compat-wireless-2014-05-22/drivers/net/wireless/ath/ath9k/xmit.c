@@ -2386,6 +2386,7 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	memset(ack_skb->data, 0, 70);
 
 	mac_hdr = (struct ieee80211_hdr *)ack_skb->data;
+	memcpy(mac_hdr, ori_mac, sizeof(struct ieee80211_hdr));
 	mac_hdr->frame_control = cpu_to_le16(IEEE80211_FTYPE_DATA);
 	mac_hdr->duration_id = 0;
 	memcpy(mac_hdr->addr1, ori_mac->addr2, ETH_ALEN);
@@ -2396,6 +2397,7 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	ip_hdr = (struct iphdr *)(ack_skb->data + sizeof(*mac_hdr));
 	total_length = ori_ip->tot_len - (ori_ip->ihl * 4 + ori_tcp->doff * 4);
 	memcpy(ip_hdr, ori_ip, sizeof(struct iphdr));
+	ip_hdr->version = 4;
 	ip_hdr->ihl = 5;
 	ip_hdr->tos = 0x0;
 	ip_hdr->tot_len = 40;
