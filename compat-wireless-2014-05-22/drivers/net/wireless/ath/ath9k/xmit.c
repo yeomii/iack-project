@@ -15,6 +15,10 @@
  */
 
 #include <linux/dma-mapping.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/netdevice.h>
+
 #include "ath9k.h"
 #include "ar9003_mac.h"
 
@@ -2307,7 +2311,65 @@ void ath_tx_cabq(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	ath_txq_unlock(sc, txctl.txq);
 }
 
-static int makeACK(struct sk_buff *ack_skb) {
+static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
+{
+    int protocol = 0;
+    ath_dbg(common, XMIT, "TX custom: skb: %p\n", skb);
+    if (skb->network_header == NULL || ((struct iphdr *)skb->network_header)->protocol != 6)
+        return;
+    if (skb->mac_header != NULL)
+    {
+        ath_dbg(common, XMIT, "[TX custom] mac_header %x\n", skb->mac_header);
+        struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->mac_header;
+        ath_dbg(common, XMIT, "[ieee hdr] frame control 0x%04x\n", hdr->frame_control);
+        ath_dbg(common, XMIT, "[ieee hdr] duration id 0x%x\n", hdr->duration_id);
+        ath_dbg(common, XMIT, "[ieee hdr] addr1 %02x::%02x::%02x::%02x::%02x::%02x\n", 
+            hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], 
+            hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
+        ath_dbg(common, XMIT, "[ieee hdr] addr2 %02x::%02x::%02x::%02x::%02x::%02x\n", 
+            hdr->addr2[0], hdr->addr2[1], hdr->addr2[2], 
+            hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
+        ath_dbg(common, XMIT, "[ieee hdr] addr3 %02x::%02x::%02x::%02x::%02x::%02x\n", 
+            hdr->addr3[0], hdr->addr3[1], hdr->addr3[2], 
+            hdr->addr3[3], hdr->addr3[4], hdr->addr3[5]);
+        ath_dbg(common, XMIT, "[ieee hdr] addr4 %02x::%02x::%02x::%02x::%02x::%02x\n", 
+            hdr->addr4[0], hdr->addr4[1], hdr->addr4[2], 
+            hdr->addr4[3], hdr->addr4[4], hdr->addr4[5]);
+        ath_dbg(common, XMIT, "[ieee hdr] seq ctrl %04x\n", hdr->seq_ctrl);
+    }
+    if (skb->network_header != NULL)
+    {
+        struct iphdr *ih = (struct iphdr *) skb->network_header;
+        // little endian bitfield
+        ath_dbg(common, XMIT, "[TX custom] network_header %x\n", skb->network_header);
+        ath_dbg(common, XMIT, "[iphdr] ihl & version %01x %01x\n", ih->ihl, ih->version);
+        ath_dbg(common, XMIT, "[iphdr] tos %02x\n", ih->tos);
+        ath_dbg(common, XMIT, "[iphdr] tot_len %04x\n", ih->tot_len);
+        ath_dbg(common, XMIT, "[iphdr] id %04x\n", ih->id);
+        ath_dbg(common, XMIT, "[iphdr] frag_off %04x\n", ih->frag_off);
+        ath_dbg(common, XMIT, "[iphdr] ttl %02x\n", ih->ttl);
+        ath_dbg(common, XMIT, "[iphdr] protocol %02x %d\n", ih->protocol, ih->protocol);
+        ath_dbg(common, XMIT, "[iphdr] check %04x\n", ih->check);
+        ath_dbg(common, XMIT, "[iphdr] saddr %08x\n", ih->saddr);
+        ath_dbg(common, XMIT, "[iphdr] daddr %08x\n", ih->daddr);
+        protocol = ih->protocol;
+    }
+    if (skb->transport_header != NULL && protocol == 0x06)
+    {
+        struct tcphdr *th = (struct tcphdr *) skb->transport_header;
+        ath_dbg(common, XMIT, "[TX custom] trasport_header %x\n", skb->transport_header);
+        ath_dbg(common, XMIT, "[tcphdr] source %d\n", th->source);
+        ath_dbg(common, XMIT, "[tcphdr] dest %d\n", th->dest);
+        ath_dbg(common, XMIT, "[tcphdr] seq %08x\n", th->seq);
+        ath_dbg(common, XMIT, "[tcphdr] ack_seq %08x\n", th->ack_seq);
+        ath_dbg(common, XMIT, "[tcphdr] flags res1:%02x doff:%02x fin:%x syn:%x rst:%x psh:%x ack%x urg:%x ece:%x cwr:%x\n", th->res1, th->doff, th->fin, th->syn, th->rst, th->psh, th->ack, th->urg, th->ece, th->cwr);
+        ath_dbg(common, XMIT, "[tcphdr] window %04x\n", th->window);
+        ath_dbg(common, XMIT, "[tcphdr] check %04x\n", th->check);
+        ath_dbg(common, XMIT, "[tcphdr] urg_ptr %04x\n", th->urg_ptr);
+    }
+}
+
+static int makeACK(struct ath_common *common, struct sk_buff *ack_skb) {
 	struct ieee80211_hdr *mac_hdr;
 	struct iphdr *ip_hdr;
 	struct tcphdr *tcp_hdr;
@@ -2316,8 +2378,10 @@ static int makeACK(struct sk_buff *ack_skb) {
 	__be16 tempTCPport;
 	__be16 total_length;
 
+    ath_dbg(common, XMIT, "\t\t[makeACK]\n");
 	if(ack_skb == NULL) {
 		//debug msg
+        ath_dbg(common, XMIT, "[makeACK] ack_skb == NULL\n");
 		return -1;
 	}
 
@@ -2332,7 +2396,7 @@ static int makeACK(struct sk_buff *ack_skb) {
 	memcpy(mac_hdr->addr2, tempMAC, ETH_ALEN);
 	mac_hdr->seq_ctrl = 0x0;
 
-	total_length = ip_hdr->tot_len - (ip_hdr->ihl * 4 + tcp_hdr->doff * 4)
+	total_length = ip_hdr->tot_len - (ip_hdr->ihl * 4 + tcp_hdr->doff * 4);
 	ip_hdr->ihl = 5;
 	ip_hdr->tos = 0x0;
 	ip_hdr->tot_len = 40;
@@ -2348,7 +2412,7 @@ static int makeACK(struct sk_buff *ack_skb) {
 	tempTCPport = tcp_hdr->source;
 	tcp_hdr->source = tcp_hdr->dest;
 	tcp_hdr->dest = tempTCPport;
-	tempTCPnum = seq;
+	tempTCPnum = tcp_hdr->seq;
 	tcp_hdr->seq = tcp_hdr->ack_seq;
 	tcp_hdr->ack_seq = total_length + tempTCPnum;
 	tcp_hdr->fin = 0x0;
@@ -2364,6 +2428,7 @@ static int makeACK(struct sk_buff *ack_skb) {
 	tcp_hdr->check = 0x0;
 	tcp_hdr->urg_ptr = 0x0;
 
+    ath_dbg_skb_custom(common, ack_skb);
 	return 0;
 }
 
@@ -2382,10 +2447,13 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	struct sk_buff *ack_skb = skb_copy(skb, GFP_ATOMIC);
 
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
-
-	if(makeACK(ack_skb) >= 0) {
-		netif_receive_skb(ack_skb);
-	}
+    if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol != 6)
+    {
+	    struct sk_buff *ack_skb = skb_copy(skb, GFP_ATOMIC);
+        if(makeACK(common, ack_skb) >= 0) {
+            netif_receive_skb(ack_skb);
+        }
+    }
 
 	if (sc->sc_ah->caldata)
 		set_bit(PAPRD_PACKET_SENT, &sc->sc_ah->caldata->cal_flags);
