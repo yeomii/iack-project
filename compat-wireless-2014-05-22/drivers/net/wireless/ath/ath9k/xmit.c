@@ -2370,7 +2370,7 @@ static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
     }
 }
 
-static int makeACK(struct ath_common *common, struct sk_buff *ack_skb) {
+static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk_buff *skb) {
 	struct ieee80211_hdr *mac_hdr;
 	struct iphdr *ip_hdr;
 	struct tcphdr *tcp_hdr;
@@ -2449,11 +2449,6 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
     if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol != 6)
     {
-	    struct sk_buff *ack_skb = skb_copy(skb, GFP_NOWAIT);
-        if(makeACK(common, ack_skb) >= 0) {
-            //netif_receive_skb(ack_skb);
-        }
-        kfree_skb(ack_skb);
     }
 
 	if (sc->sc_ah->caldata)
