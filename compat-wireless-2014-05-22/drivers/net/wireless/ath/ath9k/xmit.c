@@ -2376,7 +2376,7 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	struct tcphdr *tcp_hdr, *ori_tcp;
 	__be16 total_length;
 
-    ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [makeACK] <<<<<<<<<<<<<<<<<<<\n");
+    ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [origBUF] <<<<<<<<<<<<<<<<<<<\n");
 
 	ori_mac = (struct ieee80211_hdr *)skb->mac_header;
 	ori_ip = (struct iphdr *)skb->network_header;
@@ -2430,6 +2430,10 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	tcp_hdr->urg_ptr = 0x0;
 	ack_skb->transport_header = (sk_buff_data_t)tcp_hdr;
 
+    ath_dbg_skb_custom(common, skb);
+
+    ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [makeACK] <<<<<<<<<<<<<<<<<<<\n");
+
     ath_dbg_skb_custom(common, ack_skb);
 	return 0;
 }
@@ -2448,13 +2452,15 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	unsigned long flags;
 
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
-    if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol != 6)
+    if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol == 6)
     {
 			struct sk_buff *ack_skb = alloc_skb(70, GFP_KERNEL);
 			if(makeACK(common, ack_skb, skb) >= 0) {
 				//success
-			}
+                //netif_receive_skb(ack_skb);
+			} 
 			kfree_skb(ack_skb);
+    } else {
     }
 
 	if (sc->sc_ah->caldata)
