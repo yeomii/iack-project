@@ -2387,7 +2387,7 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 
 	mac_hdr = (struct ieee80211_hdr *)ack_skb->data;
 	memcpy(mac_hdr, ori_mac, sizeof(struct ieee80211_hdr));
-	mac_hdr->frame_control = cpu_to_le16(IEEE80211_FTYPE_DATA);
+	mac_hdr->frame_control = (0x8000 | cpu_to_le16(IEEE80211_FCTL_TODS));
 	mac_hdr->duration_id = 0;
 	memcpy(mac_hdr->addr1, ori_mac->addr2, ETH_ALEN);
 	memcpy(mac_hdr->addr2, ori_mac->addr1, ETH_ALEN);
