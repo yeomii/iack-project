@@ -2394,7 +2394,7 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	mac_hdr->seq_ctrl = 0x0;
 	ack_skb->mac_header = (sk_buff_data_t)mac_hdr;
 
-	ip_hdr = (struct iphdr *)(ack_skb->data + sizeof(*mac_hdr));
+	ip_hdr = (struct iphdr *)(ack_skb->data + sizeof(struct ieee80211_hdr));
 	total_length = ori_ip->tot_len - (ori_ip->ihl * 4 + ori_tcp->doff * 4);
 	memcpy(ip_hdr, ori_ip, sizeof(struct iphdr));
 	ip_hdr->version = 4;
@@ -2410,7 +2410,7 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	ip_hdr->daddr = ori_ip->saddr;
 	ack_skb->network_header = (sk_buff_data_t)ip_hdr;
 
-	tcp_hdr = (struct tcphdr *)(ack_skb->data + sizeof(*mac_hdr) + sizeof(*ip_hdr));
+	tcp_hdr = (struct tcphdr *)(ack_skb->data + sizeof(struct ieee80211_hdr) + sizeof(struct iphdr));
 	memcpy(tcp_hdr, ori_tcp, sizeof(struct tcphdr));
 	tcp_hdr->source = ori_tcp->dest;
 	tcp_hdr->dest = ori_tcp->source;
