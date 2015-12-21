@@ -19,6 +19,7 @@
 #include <linux/tcp.h>
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
+#include <linux/etherdevice.h>
 
 #include "ath9k.h"
 #include "ar9003_mac.h"
@@ -2370,8 +2371,9 @@ static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
     }
 }
 
-static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk_buff *skb) {
-	struct ieee80211_hdr *mac_hdr, *ori_mac;
+static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
+	struct ethhdr *eth_hdr;
+    struct ieee80211_hdr *ori_mac;
 	struct iphdr *ip_hdr, *ori_ip;
 	struct tcphdr *tcp_hdr, *ori_tcp;
 	__be16 total_length;
@@ -2382,20 +2384,21 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	ori_ip = (struct iphdr *)skb->network_header;
 	ori_tcp = (struct tcphdr *)skb->transport_header;
 
-	skb_put(ack_skb, 70);
-	memset(ack_skb->data, 0, 70);
+    struct sk_buff *ack_skb = dev_alloc_skb(128);
+    ack_skb->dev = skb->dev;
 
-	mac_hdr = (struct ieee80211_hdr *)ack_skb->data;
-	memcpy(mac_hdr, ori_mac, sizeof(struct ieee80211_hdr));
-	mac_hdr->frame_control = (0x8000 | cpu_to_le16(IEEE80211_FCTL_TODS));
-	mac_hdr->duration_id = 0;
-	memcpy(mac_hdr->addr1, ori_mac->addr2, ETH_ALEN);
-	memcpy(mac_hdr->addr2, ori_mac->addr1, ETH_ALEN);
-	mac_hdr->seq_ctrl = 0x0;
-	ack_skb->mac_header = (sk_buff_data_t)mac_hdr;
-
-	ip_hdr = (struct iphdr *)(ack_skb->data + sizeof(struct ieee80211_hdr));
+    //skb_put(ack_skb, sizeof(struct ethhdr));
+    int ret = eth_header(ack_skb, skb->dev, ETH_P_IP, ori_mac->addr3, ori_mac->addr1, 0);
+    if (ret < 0)
+    {
+        kfree_skb(ack_skb);
+        return;
+    }
+    ack_skb->data += ret;
+    skb_put(ack_skb, sizeof(struct iphdr));
+    ip_hdr = ack_skb->data;
 	total_length = ori_ip->tot_len - (ori_ip->ihl * 4 + ori_tcp->doff * 4);
+    
 	memcpy(ip_hdr, ori_ip, sizeof(struct iphdr));
 	ip_hdr->version = 4;
 	ip_hdr->ihl = 5;
@@ -2405,12 +2408,13 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
 	ip_hdr->frag_off = 0x4000;
 	ip_hdr->ttl = 0x40;
 	ip_hdr->protocol = 0x06;
-	ip_hdr->check = 0x0;
 	ip_hdr->saddr = ori_ip->daddr;
 	ip_hdr->daddr = ori_ip->saddr;
+	ip_hdr->check = ip_fast_csum(ip_hdr, ip_hdr->ihl);
 	ack_skb->network_header = (sk_buff_data_t)ip_hdr;
 
-	tcp_hdr = (struct tcphdr *)(ack_skb->data + sizeof(struct ieee80211_hdr) + sizeof(struct iphdr));
+    skb_put(ack_skb, sizeof(struct tcphdr));
+	tcp_hdr = (struct tcphdr *)(ack_skb->data + sizeof(struct iphdr));
 	memcpy(tcp_hdr, ori_tcp, sizeof(struct tcphdr));
 	tcp_hdr->source = ori_tcp->dest;
 	tcp_hdr->dest = ori_tcp->source;
@@ -2435,6 +2439,10 @@ static int makeACK(struct ath_common *common, struct sk_buff *ack_skb, struct sk
     ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [makeACK] <<<<<<<<<<<<<<<<<<<\n");
 
     ath_dbg_skb_custom(common, ack_skb);
+    
+    netif_receive_skb(ack_skb);
+    
+    kfree_skb(ack_skb);
 	return 0;
 }
 
@@ -2452,24 +2460,20 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	unsigned long flags;
 
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
-    if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol == 6)
-    {
-			struct sk_buff *ack_skb = alloc_skb(70, GFP_KERNEL);
-			if(makeACK(common, ack_skb, skb) >= 0) {
-				//success
-                //netif_receive_skb(ack_skb);
-			} 
-			kfree_skb(ack_skb);
-    } else {
-    }
 
 	if (sc->sc_ah->caldata)
 		set_bit(PAPRD_PACKET_SENT, &sc->sc_ah->caldata->cal_flags);
 
 	if (!(tx_flags & ATH_TX_ERROR))
+    {
 		/* Frame was ACKed */
 		tx_info->flags |= IEEE80211_TX_STAT_ACK;
 
+        if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol == 6)
+        {
+            sendfakeACK(common, skb);
+        }
+    }
 	padpos = ieee80211_hdrlen(hdr->frame_control);
 	padsize = padpos & 3;
 	if (padsize && skb->len>padpos+padsize) {
