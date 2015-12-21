@@ -2319,6 +2319,7 @@ static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
     ath_dbg(common, XMIT, "TX custom: skb: %p\n", skb);
     if (skb->network_header == NULL || ((struct iphdr *)skb->network_header)->protocol != 6)
         return;
+        /*
     if (skb->mac_header != NULL)
     {
         ath_dbg(common, XMIT, "[TX custom] mac_header %x\n", skb->mac_header);
@@ -2339,6 +2340,7 @@ static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
             hdr->addr4[3], hdr->addr4[4], hdr->addr4[5]);
         ath_dbg(common, XMIT, "[ieee hdr] seq ctrl %04x\n", hdr->seq_ctrl);
     }
+    */
     if (skb->network_header != NULL)
     {
         struct iphdr *ih = (struct iphdr *) skb->network_header;
@@ -2394,9 +2396,11 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
         kfree_skb(ack_skb);
         return;
     }
-    ack_skb->data += ret;
+    ack_skb->mac_header = (sk_buff_data_t) ack_skb->data;
+
+    //ack_skb->data += ret;
     skb_put(ack_skb, sizeof(struct iphdr));
-    ip_hdr = ack_skb->data;
+    ip_hdr = (struct iphdr *)(ack_skb->data + sizeof(struct ethhdr));
 	total_length = ori_ip->tot_len - (ori_ip->ihl * 4 + ori_tcp->doff * 4);
     
 	memcpy(ip_hdr, ori_ip, sizeof(struct iphdr));
@@ -2414,7 +2418,7 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
 	ack_skb->network_header = (sk_buff_data_t)ip_hdr;
 
     skb_put(ack_skb, sizeof(struct tcphdr));
-	tcp_hdr = (struct tcphdr *)(ack_skb->data + sizeof(struct iphdr));
+	tcp_hdr = (struct tcphdr *)(ack_skb->data + sizeof(struct ethhdr) +sizeof(struct iphdr));
 	memcpy(tcp_hdr, ori_tcp, sizeof(struct tcphdr));
 	tcp_hdr->source = ori_tcp->dest;
 	tcp_hdr->dest = ori_tcp->source;
