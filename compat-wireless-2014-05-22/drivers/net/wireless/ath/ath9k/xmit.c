@@ -2386,9 +2386,13 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
 	ori_ip = (struct iphdr *)skb->network_header;
 	ori_tcp = (struct tcphdr *)skb->transport_header;
 
-    struct sk_buff *ack_skb = dev_alloc_skb(128);
+    struct sk_buff *ack_skb = alloc_skb(sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr), GFP_KERNEL);
     ack_skb->dev = skb->dev;
-
+    ack_skb->protocol = cpu_to_le16(ETH_P_IP);
+    memset(ack_skb->cb, 0, 48);
+    ack_skb->ip_summed = CHECKSUM_UNNECESSARY;
+   
+    skb_reserve(ack_skb, sizeof(struct ethhdr));
     //skb_put(ack_skb, sizeof(struct ethhdr));
     int ret = eth_header(ack_skb, skb->dev, ETH_P_IP, ori_mac->addr3, ori_mac->addr1, 0);
     if (ret < 0)
@@ -2396,7 +2400,7 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
         kfree_skb(ack_skb);
         return;
     }
-    ack_skb->mac_header = (sk_buff_data_t) ack_skb->data;
+    ack_skb->mac_header = ack_skb->data;
 
     //ack_skb->data += ret;
     skb_put(ack_skb, sizeof(struct iphdr));
