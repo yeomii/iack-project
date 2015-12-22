@@ -2452,7 +2452,7 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
     
     ack_skb->data_len = 54;
 
-    ath_dbg_skb_custom(common, skb);
+    //ath_dbg_skb_custom(common, skb);
 
     ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [makeACK] <<<<<<<<<<<<<<<<<<<\n");
 
