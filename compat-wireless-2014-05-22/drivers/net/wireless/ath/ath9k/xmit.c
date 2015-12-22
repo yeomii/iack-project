@@ -20,6 +20,8 @@
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
+#include <linux/ieee80211.h>
+//#include <netinet/in.h>
 
 #include "ath9k.h"
 #include "ar9003_mac.h"
@@ -2319,9 +2321,10 @@ static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
     ath_dbg(common, XMIT, "TX custom: skb: %p\n", skb);
     if (skb->network_header == NULL || ((struct iphdr *)skb->network_header)->protocol != 6)
         return;
-        /*
+        
     if (skb->mac_header != NULL)
     {
+        ath_dbg(common, XMIT, "[TX custom] data %x\n", skb->data);
         ath_dbg(common, XMIT, "[TX custom] mac_header %x\n", skb->mac_header);
         struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->mac_header;
         ath_dbg(common, XMIT, "[ieee hdr] frame control 0x%04x\n", hdr->frame_control);
@@ -2340,7 +2343,7 @@ static void ath_dbg_skb_custom(struct ath_common *common, struct sk_buff *skb)
             hdr->addr4[3], hdr->addr4[4], hdr->addr4[5]);
         ath_dbg(common, XMIT, "[ieee hdr] seq ctrl %04x\n", hdr->seq_ctrl);
     }
-    */
+    
     if (skb->network_header != NULL)
     {
         struct iphdr *ih = (struct iphdr *) skb->network_header;
@@ -2382,7 +2385,7 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
 
     ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [origBUF] <<<<<<<<<<<<<<<<<<<\n");
 
-	ori_mac = (struct ieee80211_hdr *)skb->mac_header;
+	ori_mac = (struct ieee80211_hdr *)((char *)skb->data);
 	ori_ip = (struct iphdr *)skb->network_header;
 	ori_tcp = (struct tcphdr *)skb->transport_header;
 
@@ -2391,15 +2394,20 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
     ack_skb->protocol = cpu_to_le16(ETH_P_IP);
     memset(ack_skb->cb, 0, 48);
     ack_skb->ip_summed = CHECKSUM_UNNECESSARY;
-   
+  /* 
     skb_reserve(ack_skb, sizeof(struct ethhdr));
-    //skb_put(ack_skb, sizeof(struct ethhdr));
     int ret = eth_header(ack_skb, skb->dev, ETH_P_IP, ori_mac->addr3, ori_mac->addr1, 0);
     if (ret < 0)
     {
         kfree_skb(ack_skb);
         return;
     }
+    */
+    skb_put(ack_skb, sizeof(struct ethhdr));
+    eth_hdr = (struct ethhdr *)ack_skb->data;
+    memcpy(eth_hdr->h_dest, ieee80211_get_SA(ori_mac), ETH_ALEN);
+    memcpy(eth_hdr->h_source, ieee80211_get_DA(ori_mac), ETH_ALEN);
+    eth_hdr->h_proto = ETH_P_IP;
     ack_skb->mac_header = ack_skb->data;
 
     //ack_skb->data += ret;
@@ -2441,16 +2449,20 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
 	tcp_hdr->check = 0x0;
 	tcp_hdr->urg_ptr = 0x0;
 	ack_skb->transport_header = (sk_buff_data_t)tcp_hdr;
+    
+    ack_skb->data_len = 54;
 
     ath_dbg_skb_custom(common, skb);
 
     ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [makeACK] <<<<<<<<<<<<<<<<<<<\n");
 
-    ath_dbg_skb_custom(common, ack_skb);
+    //ath_dbg_skb_custom(common, ack_skb);
     
+    print_hex_dump_bytes("[XMIT] [ack_skb]\t", ATH_DBG_XMIT, ack_skb->data, sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr));
+
     netif_receive_skb(ack_skb);
     
-    kfree_skb(ack_skb);
+    //kfree_skb(ack_skb);
 	return 0;
 }
 
@@ -2479,6 +2491,7 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 
         if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol == 6)
         {
+            print_hex_dump_bytes("[XMIT] [ori_skb]\t", ATH_DBG_XMIT, skb->data, skb->len);
             sendfakeACK(common, skb);
         }
     }
