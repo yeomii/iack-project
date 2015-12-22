@@ -2382,7 +2382,7 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
 
     ath_dbg(common, XMIT, ">>>>>>>>>>>>>>>>>>>>>> [origBUF] <<<<<<<<<<<<<<<<<<<\n");
 
-	ori_mac = (struct ieee80211_hdr *)skb->mac_header;
+	ori_mac = (struct ieee80211_hdr *)skb->data;
 	ori_ip = (struct iphdr *)skb->network_header;
 	ori_tcp = (struct tcphdr *)skb->transport_header;
 
