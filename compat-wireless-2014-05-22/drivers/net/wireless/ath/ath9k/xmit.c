@@ -2448,7 +2448,7 @@ static void sendfakeACK(struct ath_common *common, struct sk_buff *skb) {
 
     ath_dbg_skb_custom(common, ack_skb);
     
-    netif_receive_skb(ack_skb);
+    //netif_receive_skb(ack_skb);
     
     kfree_skb(ack_skb);
 	return 0;
@@ -2479,6 +2479,7 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 
         if (skb->network_header != NULL && ((struct iphdr *)skb->network_header)->protocol == 6)
         {
+						print_hex_dump_bytes("[ori SKB] ", DUMP_PREFIX_OFFSET, skb->data, skb->len);
             sendfakeACK(common, skb);
         }
     }
